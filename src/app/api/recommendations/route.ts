@@ -46,18 +46,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const aiResponse = await getAIRecommendations(parsed.data);
-    const recommendations = await validateRecommendations(aiResponse.recommendations, 5);
-    const totalCandidates = aiResponse.recommendations.length;
-    const validatedCount = recommendations.length;
+    const candidates = aiResponse.recommendations.slice(0, 5);
 
-    return NextResponse.json({
-      recommendations,
-      meta: {
-        totalCandidates,
-        validatedCount,
-        removedCount: totalCandidates - validatedCount,
-      },
-    });
+    // Return AI results immediately — enrich with Open Library covers client-side
+    const recommendations = candidates.map((rec) => ({
+      ...rec,
+      validationStatus: 'unvalidated' as const,
+      bookData: undefined,
+    }));
+
+    return NextResponse.json({ recommendations, meta: { totalCandidates: candidates.length, validatedCount: candidates.length, removedCount: 0 } });
   } catch (err) {
     console.error('Recommendation error:', err);
     return NextResponse.json({ error: 'Recommendation generation failed' }, { status: 500 });
