@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ recommendations, meta: { totalCandidates: candidates.length, validatedCount: candidates.length, removedCount: 0 } });
   } catch (err) {
-    console.error('Recommendation error:', err);
-    return NextResponse.json({ error: 'Recommendation generation failed' }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Recommendation error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -6,9 +6,9 @@ import { MOCK_RECOMMENDATIONS } from './mockRecommendations';
 const RawRecommendationSchema = z.object({
   title: z.string(),
   author: z.string(),
-  matchScore: z.number().int().min(0).max(100),
+  matchScore: z.number().min(0).max(100).transform(Math.round),
   oneSentenceHook: z.string(),
-  premise: z.string(),
+  premise: z.string().optional(),
   whyItFits: z.string(),
   matchingDimensions: z.array(z.enum([
     'plot', 'tone', 'characters', 'writingStyle', 'themes',
