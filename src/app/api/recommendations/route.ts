@@ -46,16 +46,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const aiResponse = await getAIRecommendations(parsed.data);
-    const candidates = aiResponse.recommendations.slice(0, 5);
+    const recommendations = await validateRecommendations(aiResponse.recommendations, 5);
+    const totalCandidates = aiResponse.recommendations.length;
+    const validatedCount = recommendations.length;
 
-    // Return AI results immediately — enrich with Open Library covers client-side
-    const recommendations = candidates.map((rec) => ({
-      ...rec,
-      validationStatus: 'unvalidated' as const,
-      bookData: undefined,
-    }));
-
-    return NextResponse.json({ recommendations, meta: { totalCandidates: candidates.length, validatedCount: candidates.length, removedCount: 0 } });
+    return NextResponse.json({
+      recommendations,
+      meta: {
+        totalCandidates,
+        validatedCount,
+        removedCount: totalCandidates - validatedCount,
+      },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Recommendation error:', message);

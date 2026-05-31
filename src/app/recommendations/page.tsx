@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Info } from 'lucide-react';
 import type { Book, SelectedDimension, Recommendation, RecommendationRequest } from '@/types';
 import RecommendationCard from '@/components/RecommendationCard';
 import RecommendationSkeleton from '@/components/RecommendationSkeleton';
@@ -17,42 +17,17 @@ interface Preferences {
   optionalRefinement: string;
 }
 
-async function enrichWithCovers(recs: Recommendation[]): Promise<Recommendation[]> {
-  return Promise.all(
-    recs.map(async (rec) => {
-      try {
-        const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(rec.title + ' ' + rec.author)}&limit=1&fields=key,title,author_name,first_publish_year,cover_i,isbn`,
-        );
-        const data = await res.json();
-        const doc = data.docs?.[0];
-        if (!doc) return rec;
-        return {
-          ...rec,
-          validationStatus: 'validated' as const,
-          bookData: {
-            id: doc.key,
-            title: doc.title ?? rec.title,
-            author: doc.author_name?.[0] ?? rec.author,
-            firstPublishYear: doc.first_publish_year,
-            coverUrl: doc.cover_i
-              ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-              : undefined,
-            openLibraryKey: doc.key,
-            isbn: doc.isbn?.[0],
-          },
-        };
-      } catch {
-        return rec;
-      }
-    }),
-  );
+interface Meta {
+  totalCandidates: number;
+  validatedCount: number;
+  removedCount: number;
 }
 
 export default function RecommendationsPage() {
   const router = useRouter();
   const [book, setBook] = useState<Book | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
   const hasFetched = useRef(false);
 
@@ -79,7 +54,7 @@ export default function RecommendationsPage() {
       selectedDimensions: parsedPrefs.selectedDimensions,
       optionalRefinement: parsedPrefs.optionalRefinement || undefined,
       targetLanguage: 'English',
-      numberOfRecommendations: 5,
+      numberOfRecommendations: 8,
       recommendationMode: 'balanced',
     };
 
@@ -92,13 +67,10 @@ export default function RecommendationsPage() {
         if (!res.ok) throw new Error('Request failed');
         return res.json();
       })
-      .then(async (data) => {
-        // Show cards immediately with no covers
+      .then((data) => {
         setRecommendations(data.recommendations);
+        setMeta(data.meta);
         setStatus('done');
-        // Then enrich with covers in the background
-        const enriched = await enrichWithCovers(data.recommendations);
-        setRecommendations(enriched);
       })
       .catch(() => setStatus('error'));
   }, [router]);
@@ -121,7 +93,9 @@ export default function RecommendationsPage() {
             <RecommendationSkeleton key={i} />
           ))}
         </div>
-        <p className="text-center text-xs text-stone-400 mt-6">Finding your recommendations…</p>
+        <p className="text-center text-xs text-stone-400 mt-6">
+          Generating and validating your recommendations…
+        </p>
       </div>
     );
   }
@@ -159,6 +133,17 @@ export default function RecommendationsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-stone-900 tracking-tight">Your recommendations</h1>
         <p className="text-sm text-stone-500 mt-1">Based on the reading experience you selected.</p>
+
+        {meta && meta.removedCount > 0 && (
+          <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-stone-50 border border-stone-200">
+            <Info className="w-3.5 h-3.5 text-stone-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-stone-500">
+              {meta.removedCount} candidate{meta.removedCount > 1 ? 's were' : ' was'} removed
+              because {meta.removedCount > 1 ? 'they' : 'it'} could not be verified in Open Library.
+              Showing {meta.validatedCount} verified result{meta.validatedCount !== 1 ? 's' : ''}.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
