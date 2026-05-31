@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw, Info } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Info, Plus, Loader2 } from 'lucide-react';
 import type { Book, SelectedDimension, Recommendation, RecommendationRequest } from '@/types';
 import RecommendationCard from '@/components/RecommendationCard';
 import RecommendationSkeleton from '@/components/RecommendationSkeleton';
@@ -26,9 +26,12 @@ interface Meta {
 export default function RecommendationsPage() {
   const router = useRouter();
   const [book, setBook] = useState<Book | null>(null);
+  const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreSkeletons, setMoreSkeletons] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -48,6 +51,7 @@ export default function RecommendationsPage() {
     } catch { router.replace('/search'); return; }
 
     setBook(parsedBook);
+    setPrefs(parsedPrefs);
 
     const request: RecommendationRequest = {
       sourceBook: parsedBook,
@@ -74,6 +78,40 @@ export default function RecommendationsPage() {
       })
       .catch(() => setStatus('error'));
   }, [router]);
+
+  const handleLoadMore = async () => {
+    if (!book || !prefs || loadingMore) return;
+    setLoadingMore(true);
+    setMoreSkeletons(true);
+
+    const excludeTitles = recommendations.map((r) => r.title);
+
+    const request = {
+      sourceBook: book,
+      selectedDimensions: prefs.selectedDimensions,
+      optionalRefinement: prefs.optionalRefinement || undefined,
+      targetLanguage: 'English',
+      numberOfRecommendations: 8,
+      recommendationMode: 'balanced',
+      excludeTitles,
+    };
+
+    try {
+      const res = await fetch('/api/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      setMoreSkeletons(false);
+      setRecommendations((prev) => [...prev, ...data.recommendations]);
+    } catch {
+      setMoreSkeletons(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleStartOver = () => {
     localStorage.removeItem(BOOK_KEY);
@@ -146,20 +184,42 @@ export default function RecommendationsPage() {
         )}
       </div>
 
+      {/* Cards */}
       <div className="space-y-4">
         {recommendations.map((rec, i) => (
           <RecommendationCard key={`${rec.title}-${i}`} rec={rec} rank={i + 1} />
         ))}
+
+        {/* Skeletons while loading more */}
+        {moreSkeletons && Array.from({ length: 5 }).map((_, i) => (
+          <RecommendationSkeleton key={`more-${i}`} />
+        ))}
       </div>
 
-      <div className="mt-12 pt-8 border-t border-stone-100 text-center">
-        <p className="text-sm text-stone-400 mb-3">Not quite right?</p>
+      {/* Footer */}
+      <div className="mt-8 space-y-3">
+        {/* Load more button */}
         <button
-          onClick={handleStartOver}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
+          onClick={handleLoadMore}
+          disabled={loadingMore}
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <RefreshCw className="w-3.5 h-3.5" /> Start over with a different book
+          {loadingMore
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding 5 more…</>
+            : <><Plus className="w-4 h-4" /> Show 5 more recommendations</>
+          }
         </button>
+
+        {/* Start over */}
+        <div className="pt-4 border-t border-stone-100 text-center">
+          <p className="text-sm text-stone-400 mb-3">Not quite right?</p>
+          <button
+            onClick={handleStartOver}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Start over with a different book
+          </button>
+        </div>
       </div>
     </div>
   );

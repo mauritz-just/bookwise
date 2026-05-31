@@ -29,6 +29,7 @@ const RequestSchema = z.object({
   targetLanguage: z.string().default('English'),
   numberOfRecommendations: z.number().int().min(1).max(8).default(8),
   recommendationMode: z.enum(['balanced', 'safe', 'unexpected', 'hiddenGems']).default('balanced'),
+  excludeTitles: z.array(z.string()).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -46,7 +47,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const aiResponse = await getAIRecommendations(parsed.data);
-    const recommendations = await validateRecommendations(aiResponse.recommendations, 5);
+    const excludeTitles = parsed.data.excludeTitles ?? [];
+    const filtered = aiResponse.recommendations.filter(
+      (r) => !excludeTitles.some((t) => t.toLowerCase() === r.title.toLowerCase()),
+    );
+    const recommendations = await validateRecommendations(filtered, 5);
     const totalCandidates = aiResponse.recommendations.length;
     const validatedCount = recommendations.length;
 

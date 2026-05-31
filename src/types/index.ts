@@ -45,6 +45,7 @@ export interface RecommendationRequest {
   targetLanguage: string;
   numberOfRecommendations: number;
   recommendationMode: RecommendationMode;
+  excludeTitles?: string[];
 }
 
 export interface RawAIRecommendation {

@@ -37,6 +37,10 @@ export function buildRecommendationPrompt(request: RecommendationRequest): strin
     hiddenGems: 'Focus on underrated and overlooked books. Avoid bestsellers and obvious picks.',
   };
 
+  const exclusionNote = request.excludeTitles && request.excludeTitles.length > 0
+    ? `\n## Already recommended — do NOT include these\n${request.excludeTitles.map((t) => `- ${t}`).join('\n')}\n`
+    : '';
+
   return `You are an expert literary advisor with encyclopaedic knowledge of fiction and non-fiction across all languages and centuries. Your job is to recommend books based on the specific reading experience a reader loved — not simply by genre or surface similarity.
 
 ## Reader's source book
@@ -47,7 +51,7 @@ Author: ${sourceBook.author}${sourceBook.firstPublishYear ? `\nPublished: ${sour
 ${dimensionList}
 
 ${optionalRefinement ? `## Reader's own words\n"${optionalRefinement}"\n` : ''}
-## Mode
+${exclusionNote}## Mode
 ${modeInstructions[recommendationMode] ?? modeInstructions.balanced}
 
 ## Your task
