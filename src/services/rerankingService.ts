@@ -39,6 +39,81 @@ function normalizeKey(title: string, author: string): string {
   return `${norm(title)}|${norm(author)}`;
 }
 
+const CHALLENGING_KEYWORDS = [
+  'dense', 'complex', 'challenging', 'demanding', 'difficult', 'intricate',
+  'cerebral', 'hard sci-fi', 'hard science fiction', 'philosophical', 'meditative',
+  'sprawling', 'heavy', 'dense prose', 'requires patience',
+];
+
+const PROBLEM_SOLVING_KEYWORDS = [
+  'problem-solving', 'problem solving', 'survival', 'mission', 'engineering',
+  'ingenuity', 'competence', 'resourceful', 'figure out', 'science problem',
+  'technical', 'page-turner', 'page turner', 'propulsive', 'adventure',
+  'fast-paced', 'fast paced', 'thriller', 'race against', 'stranded',
+];
+
+const INTELLECTUAL_KEYWORDS = [
+  'intellectual curiosity', 'intellectual', 'thought-provoking', 'thought provoking',
+  'contemplative', 'meditation', 'meditative', 'idea-driven', 'ideas-driven',
+  'existential', 'cerebral', 'philosophical inquiry',
+];
+
+const POLITICAL_KEYWORDS = [
+  'political', 'politics', 'geopolit', 'democracy', 'democratic', 'governance',
+  'government', 'election', 'bureaucra', 'systems of power', 'social systems',
+  'ideolog', 'revolution', 'power struggle',
+];
+
+/**
+ * Deterministic score caps for fast, accessible, problem-solving requests
+ * (Plot High + Pacing High + Complexity Low). The reranking prompt does the
+ * primary work; these caps stop dense/complex/political sci-fi from ranking
+ * near the top when the reader asked for a propulsive, accessible read.
+ */
+function applyRerankCaps(
+  score: number,
+  r: { whyItFits: string; oneSentenceHook: string; possibleMismatch: string; tags: string[]; matchingDimensions: string[]; difficulty: string; pacing: string },
+  candidate: ValidatedRecommendationCandidate,
+  selected: RecommendationRequest['selectedDimensions'],
+): number {
+  const complexityLow = selected.some((d) => d.dimension === 'complexity' && d.importance === 'low');
+  const pacingHigh = selected.some((d) => d.dimension === 'pacing' && d.importance === 'high');
+
+  // Only engage this heuristic family for accessible / fast-pacing requests.
+  if (!complexityLow && !pacingHigh) return score;
+
+  const blob = [
+    r.whyItFits, r.oneSentenceHook, r.possibleMismatch,
+    candidate.candidateReason, ...candidate.riskFlags, ...r.tags,
+  ].join(' ').toLowerCase();
+
+  const has = (list: string[]) => list.some((k) => blob.includes(k));
+  const challenging = r.difficulty === 'hard' || has(CHALLENGING_KEYWORDS);
+  const problemSolving = has(PROBLEM_SOLVING_KEYWORDS);
+  const intellectual = has(INTELLECTUAL_KEYWORDS);
+  const political = has(POLITICAL_KEYWORDS);
+  const extremelyAligned =
+    r.matchingDimensions.includes('plot') &&
+    r.matchingDimensions.includes('pacing') &&
+    r.pacing === 'fast';
+
+  let cap = 100;
+
+  // Complexity Low + challenging book → cap 82 unless extremely aligned on plot+pacing.
+  if (complexityLow && challenging && !extremelyAligned) cap = Math.min(cap, 82);
+
+  // Pacing High + steady/slow book → cap 84.
+  if (pacingHigh && (r.pacing === 'slow' || r.pacing === 'moderate')) cap = Math.min(cap, 84);
+
+  // Explanation leans on intellectual curiosity but not problem-solving/mission/survival → cap 79.
+  if (intellectual && !problemSolving) cap = Math.min(cap, 79);
+
+  // Political / systems sci-fi rather than science-problem-solving adventure → cap 75.
+  if (political && !problemSolving) cap = Math.min(cap, 75);
+
+  return Math.min(score, cap);
+}
+
 /** Build a Recommendation from a validated candidate using a modest default score. */
 function candidateToRecommendation(
   c: ValidatedRecommendationCandidate,
@@ -131,10 +206,13 @@ export async function rerankValidatedCandidates(
     if (used.has(key)) continue;
     used.add(key);
 
+    const cappedScore = applyRerankCaps(r.matchScore, r, candidate, request.selectedDimensions);
+    if (cappedScore < 70) continue;
+
     recommendations.push({
       title: candidate.bookData.title,
       author: candidate.bookData.author,
-      matchScore: r.matchScore,
+      matchScore: cappedScore,
       oneSentenceHook: r.oneSentenceHook,
       premise: r.premise,
       whyItFits: r.whyItFits,

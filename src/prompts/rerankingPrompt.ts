@@ -39,6 +39,37 @@ export function buildRerankingPrompt(
 
   const highDimNames = highDimensions.map((d) => d.dimension).join(', ');
 
+  const complexityLow = selectedDimensions.some((d) => d.dimension === 'complexity' && d.importance === 'low');
+  const pacingHigh = selectedDimensions.some((d) => d.dimension === 'pacing' && d.importance === 'high');
+  const plotHigh = selectedDimensions.some((d) => d.dimension === 'plot' && d.importance === 'high');
+
+  // Accessible, fast, problem-solving profile (e.g. Plot High + Pacing High + Complexity Low).
+  const accessibleFastBlock = (pacingHigh || plotHigh) && complexityLow
+    ? `\n## Accessibility & pace profile (the reader wants fast, accessible, NOT dense)
+This reader prioritized fast/plot-forward reading with LOW complexity. Rank for a propulsive, accessible reading experience.
+
+Prioritize (rank these higher):
+- fast, accessible plotting and page-turner pacing
+- science/problem-based problem-solving and clear stakes
+- survival or mission structure; competence fantasy
+- humor or lightness; momentum over rumination
+- low-to-medium complexity
+
+Penalize (rank these lower or drop):
+- dense or "hard" sci-fi; slow, philosophical, or meditative sci-fi
+- complex space opera; political / systems / governance sci-fi
+- high-concept books that are more intellectually interesting than fast and fun
+- challenging books generally (Complexity is LOW)
+
+Apply these score caps strictly:
+- If the book is challenging/dense and Complexity is LOW: cap at 82 unless it is extremely aligned on BOTH Plot and Pacing (fast, plot-forward).
+- If Pacing is HIGH and the book is steady or slow: cap at 84.
+- If the appeal is "intellectual curiosity" rather than problem-solving / mission / survival / fast plot: cap at 79.
+- If the book is political / systems sci-fi rather than science-problem-solving adventure: cap at 75.
+
+Such books may remain in the list as partial matches but must NOT rank near the top.\n`
+    : '';
+
   const modeInstructions: Record<string, string> = {
     balanced: 'Mix well-known titles with some lesser-known gems while strictly honouring the selected dimensions.',
     safe: 'Prioritise widely read, critically acclaimed books the reader is very likely to enjoy. Minimise risk.',
@@ -73,7 +104,7 @@ ${dimensionBlock}
 
 ${optionalRefinement ? `## Reader's own words\n"${optionalRefinement}"\n\n` : ''}## Recommendation mode
 ${modeInstructions[recommendationMode] ?? modeInstructions.balanced}
-
+${accessibleFastBlock}
 ## Candidate longlist (choose ONLY from these)
 ${candidateList}
 
