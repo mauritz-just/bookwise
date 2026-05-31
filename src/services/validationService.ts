@@ -1,5 +1,44 @@
-import type { RawAIRecommendation, Recommendation, SelectedDimension } from '@/types';
+import type {
+  RawAIRecommendation,
+  Recommendation,
+  SelectedDimension,
+  RecommendationCandidate,
+  ValidatedRecommendationCandidate,
+} from '@/types';
 import { validateBook } from './openLibraryService';
+
+/**
+ * Pipeline step 3: verify each longlist candidate against Open Library.
+ * Returns only the candidates that resolve to a real book, with the verified
+ * bookData attached. Deduplicates by the verified title+author so two
+ * candidates that resolve to the same book don't both survive.
+ */
+export async function validateRecommendationCandidates(
+  candidates: RecommendationCandidate[],
+): Promise<ValidatedRecommendationCandidate[]> {
+  const results = await Promise.allSettled(
+    candidates.map(async (c): Promise<ValidatedRecommendationCandidate | null> => {
+      const bookData = await validateBook(c.title, c.author);
+      if (!bookData) return null;
+      return { ...c, validationStatus: 'validated', bookData };
+    }),
+  );
+
+  const validated = results
+    .filter(
+      (r): r is PromiseFulfilledResult<ValidatedRecommendationCandidate | null> =>
+        r.status === 'fulfilled' && r.value !== null,
+    )
+    .map((r) => r.value as ValidatedRecommendationCandidate);
+
+  const deduped = new Map<string, ValidatedRecommendationCandidate>();
+  for (const v of validated) {
+    const key = normalizeKey(v.bookData.title, v.bookData.author);
+    if (!deduped.has(key)) deduped.set(key, v);
+  }
+
+  return Array.from(deduped.values());
+}
 
 function normalizeKey(title: string, author: string): string {
   const norm = (s: string) =>

@@ -71,6 +71,28 @@ export interface AIRecommendationResponse {
   recommendations: RawAIRecommendation[];
 }
 
+// --- Multi-step pipeline types ---
+
+export interface SourceBookAnalysis {
+  sourceGenreMode: string;
+  sourceSettingType: string;
+  sourceEmotionalRegister: string;
+  sourceSocialDynamics: string;
+}
+
+export interface RecommendationCandidate {
+  title: string;
+  author: string;
+  candidateReason: string;
+  likelyMatchDimensions: SimilarityDimension[];
+  riskFlags: string[];
+}
+
+export interface ValidatedRecommendationCandidate extends RecommendationCandidate {
+  validationStatus: 'validated';
+  bookData: Book;
+}
+
 export const DIMENSION_LABELS: Record<SimilarityDimension, string> = {
   plot: 'Plot',
   tone: 'Tone',

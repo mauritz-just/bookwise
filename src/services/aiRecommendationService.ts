@@ -1,143 +1,18 @@
-import { z } from 'zod';
-import type { RecommendationRequest, AIRecommendationResponse } from '@/types';
-import { buildRecommendationPrompt } from './recommendationPrompt';
+// Generic LLM caller shared by every pipeline step (source analysis,
+// candidate generation, reranking). Each provider returns a cleaned JSON
+// string; callers parse + validate with their own Zod schema.
 
-const RawRecommendationSchema = z.object({
-  title: z.string(),
-  author: z.string(),
-  matchScore: z.number().min(0).max(100).transform(Math.round),
-  oneSentenceHook: z.string(),
-  premise: z.string().optional(),
-  whyItFits: z.string(),
-  matchingDimensions: z.array(
-    z.enum([
-      'plot', 'tone', 'characters', 'writingStyle', 'themes',
-      'setting', 'pacing', 'emotionalFeel', 'complexity', 'genre',
-    ]).catch('setting' as const)
-  ),
-  possibleMismatch: z.string(),
-  tags: z.array(z.string()),
-  difficulty: z.enum(['easy', 'medium', 'hard']),
-  pacing: z.enum(['slow', 'moderate', 'fast']),
-});
-
-const AIResponseSchema = z.object({
-  recommendations: z.array(RawRecommendationSchema),
-});
-
-function parseAndValidate(raw: unknown): AIRecommendationResponse {
-  const result = AIResponseSchema.safeParse(raw);
-  if (!result.success) {
-    console.error('AI response validation failed:', result.error);
-    throw new Error('AI returned invalid response structure');
-  }
-  return result.data;
+export interface CallAIOptions {
+  /** Lower = more deterministic. */
+  temperature?: number;
+  maxTokens?: number;
+  /** Stable string used to derive a deterministic Groq seed. */
+  seedKey?: string;
+  /** Optional system instruction (used by OpenAI-compatible providers). */
+  system?: string;
 }
 
-async function geminiMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-
-  const prompt = buildRecommendationPrompt(request);
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.7,
-        },
-      }),
-    },
-  );
-
-  if (res.status === 429) {
-    throw new Error('RATE_LIMIT');
-  }
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini request failed (${res.status}): ${err}`);
-  }
-
-  const data = await res.json();
-  const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  const parsed = JSON.parse(text);
-  return parseAndValidate(parsed);
-}
-
-async function openAIMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
-
-  const prompt = buildRecommendationPrompt(request);
-
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-      temperature: 0.75,
-    }),
-  });
-
-  if (!res.ok) throw new Error(`OpenAI request failed: ${res.status}`);
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices[0].message.content);
-  return parseAndValidate(parsed);
-}
-
-async function claudeMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set');
-
-  const prompt = buildRecommendationPrompt(request);
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-
-  if (!res.ok) throw new Error(`Claude request failed: ${res.status}`);
-  const data = await res.json();
-
-  let text: string = data.content[0].text;
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-
-  const parsed = JSON.parse(text);
-  return parseAndValidate(parsed);
-}
-
-function buildSeed(request: RecommendationRequest): number {
-  const key = [
-    request.sourceBook.title.toLowerCase().trim(),
-    request.sourceBook.author.toLowerCase().trim(),
-    request.selectedDimensions
-      .slice()
-      .sort((a, b) => a.dimension.localeCompare(b.dimension))
-      .map((d) => `${d.dimension}:${d.importance}`)
-      .join(','),
-    request.optionalRefinement?.toLowerCase().trim() ?? '',
-  ].join('|');
-
+function hashSeed(key: string): number {
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = (Math.imul(31, hash) + key.charCodeAt(i)) | 0;
@@ -145,11 +20,16 @@ function buildSeed(request: RecommendationRequest): number {
   return Math.abs(hash);
 }
 
-async function groqMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
+function stripFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+}
+
+const DEFAULT_SYSTEM =
+  'You are a literary advisor. You must respond with valid JSON only — no prose, no markdown fences, no explanation outside the JSON object.';
+
+async function callGroq(prompt: string, opts: CallAIOptions): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY is not set');
-
-  const prompt = buildRecommendationPrompt(request);
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -160,57 +40,138 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       messages: [
-        {
-          role: 'system',
-          content: 'You are a literary advisor. You must respond with valid JSON only — no prose, no markdown fences, no explanation outside the JSON object.',
-        },
+        { role: 'system', content: opts.system ?? DEFAULT_SYSTEM },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.35,
-      max_tokens: 4000,
-      seed: buildSeed(request),
+      temperature: opts.temperature ?? 0.35,
+      max_tokens: opts.maxTokens ?? 4000,
+      seed: opts.seedKey ? hashSeed(opts.seedKey) : undefined,
       response_format: { type: 'json_object' },
     }),
   });
 
   if (res.status === 429) throw new Error('RATE_LIMIT');
-
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Groq request failed (${res.status}): ${err}`);
   }
 
   const data = await res.json();
-  let text: string = data.choices[0].message.content;
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-
-  const parsed = JSON.parse(text);
-  return parseAndValidate(parsed);
+  return stripFences(data.choices[0].message.content);
 }
 
-export async function getAIRecommendations(
-  request: RecommendationRequest,
-): Promise<{ response: AIRecommendationResponse; source: string }> {
-  const mode = process.env.AI_MODE ?? 'groq';
-  console.log('Recommendation source:', mode);
+async function callGemini(prompt: string, opts: CallAIOptions): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
-  let response: AIRecommendationResponse;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: opts.temperature ?? 0.5,
+          maxOutputTokens: opts.maxTokens ?? 4000,
+        },
+      }),
+    },
+  );
+
+  if (res.status === 429) throw new Error('RATE_LIMIT');
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini request failed (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  return stripFences(data.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
+}
+
+async function callOpenAI(prompt: string, opts: CallAIOptions): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: opts.system ?? DEFAULT_SYSTEM },
+        { role: 'user', content: prompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: opts.temperature ?? 0.5,
+      max_tokens: opts.maxTokens ?? 4000,
+    }),
+  });
+
+  if (res.status === 429) throw new Error('RATE_LIMIT');
+  if (!res.ok) throw new Error(`OpenAI request failed: ${res.status}`);
+  const data = await res.json();
+  return stripFences(data.choices[0].message.content);
+}
+
+async function callClaude(prompt: string, opts: CallAIOptions): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set');
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0.5,
+      system: opts.system ?? DEFAULT_SYSTEM,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (res.status === 429) throw new Error('RATE_LIMIT');
+  if (!res.ok) throw new Error(`Claude request failed: ${res.status}`);
+  const data = await res.json();
+  return stripFences(data.content[0].text);
+}
+
+export function getActiveAIMode(): string {
+  return process.env.AI_MODE ?? 'groq';
+}
+
+/** Call the configured LLM provider and return the raw JSON text + source label. */
+export async function callAI(
+  prompt: string,
+  opts: CallAIOptions = {},
+): Promise<{ text: string; source: string }> {
+  const mode = getActiveAIMode();
+
+  let text: string;
   switch (mode) {
     case 'gemini':
-      response = await geminiMode(request);
+      text = await callGemini(prompt, opts);
       break;
     case 'openai':
-      response = await openAIMode(request);
+      text = await callOpenAI(prompt, opts);
       break;
     case 'claude':
-      response = await claudeMode(request);
+      text = await callClaude(prompt, opts);
       break;
     case 'groq':
-      response = await groqMode(request);
+      text = await callGroq(prompt, opts);
       break;
     default:
       throw new Error(`Unknown AI_MODE: ${mode}`);
   }
 
-  return { response, source: mode };
+  return { text, source: mode };
 }

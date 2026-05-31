@@ -19,10 +19,11 @@ interface Preferences {
 }
 
 interface Meta {
-  totalCandidates: number;
-  validatedCount: number;
-  removedCount: number;
-  qualityRemovedCount: number;
+  generatedCount: number;
+  verifiedCount: number;
+  unverifiedCount: number;
+  rerankRemovedCount: number;
+  shownCount: number;
 }
 
 export default function RecommendationsPage() {
@@ -63,7 +64,7 @@ export default function RecommendationsPage() {
       selectedDimensions: parsedPrefs.selectedDimensions,
       optionalRefinement: parsedPrefs.optionalRefinement || undefined,
       targetLanguage: 'English',
-      numberOfRecommendations: 8,
+      numberOfRecommendations: 5,
       recommendationMode: 'balanced',
     };
 
@@ -104,7 +105,7 @@ export default function RecommendationsPage() {
       selectedDimensions: prefs.selectedDimensions,
       optionalRefinement: prefs.optionalRefinement || undefined,
       targetLanguage: 'English',
-      numberOfRecommendations: 8,
+      numberOfRecommendations: 5,
       recommendationMode: 'balanced',
       excludeTitles,
     };
@@ -294,15 +295,14 @@ export default function RecommendationsPage() {
           </div>
         )}
 
-        {meta && meta.removedCount > 0 && (
+        {meta && (meta.unverifiedCount > 0 || meta.rerankRemovedCount > 0) && (
           <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-stone-50 border border-stone-200">
             <Info className="w-3.5 h-3.5 text-stone-400 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-stone-500">
-              {meta.removedCount} candidate{meta.removedCount > 1 ? 's were' : ' was'} removed
-              {meta.qualityRemovedCount > 0
-                ? ` — ${meta.qualityRemovedCount} did not pass quality checks and ${meta.removedCount - meta.qualityRemovedCount} could not be verified in Open Library`
-                : ' because they could not be verified in Open Library'
-              }. Showing {meta.validatedCount} verified result{meta.validatedCount !== 1 ? 's' : ''}.
+              {meta.generatedCount} candidate{meta.generatedCount !== 1 ? 's' : ''} generated.
+              {meta.unverifiedCount > 0 && ` ${meta.unverifiedCount} could not be verified in Open Library.`}
+              {meta.rerankRemovedCount > 0 && ` ${meta.rerankRemovedCount} ${meta.rerankRemovedCount === 1 ? 'was' : 'were'} dropped during final ranking.`}
+              {' '}Showing {meta.shownCount} verified recommendation{meta.shownCount !== 1 ? 's' : ''}.
             </p>
           </div>
         )}
