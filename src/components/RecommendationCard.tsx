@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { AlertTriangle, Zap, ChevronDown, BookOpen } from 'lucide-react';
+import { AlertTriangle, Zap, ChevronDown, BookOpen, ThumbsDown, Loader2 } from 'lucide-react';
 import type { Recommendation } from '@/types';
 import { DIMENSION_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,8 @@ import TagList from './TagList';
 interface RecommendationCardProps {
   rec: Recommendation;
   rank: number;
+  onReplace?: () => void;
+  replacing?: boolean;
 }
 
 const DIFFICULTY_LABEL: Record<string, string> = {
@@ -26,12 +28,15 @@ const PACING_LABEL: Record<string, string> = {
   fast: 'Fast-paced',
 };
 
-export default function RecommendationCard({ rec, rank }: RecommendationCardProps) {
+export default function RecommendationCard({ rec, rank, onReplace, replacing }: RecommendationCardProps) {
   const [expanded, setExpanded] = useState(false);
   const cover = rec.bookData?.coverUrl;
 
   return (
-    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden animate-slide-up">
+    <div className={cn(
+      'bg-white rounded-2xl border border-stone-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden animate-slide-up',
+      replacing && 'opacity-50 pointer-events-none',
+    )}>
 
       {/* Clickable header */}
       <button
@@ -82,6 +87,24 @@ export default function RecommendationCard({ rec, rank }: RecommendationCardProp
           />
         </div>
       </button>
+
+      {/* Thumbs down */}
+      {onReplace && (
+        <div className="px-5 pb-4 flex justify-end">
+          <button
+            onClick={onReplace}
+            disabled={replacing}
+            className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition-colors disabled:opacity-40"
+            title="Not this one — find another"
+          >
+            {replacing
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Finding another…</>
+              : <><ThumbsDown className="w-3.5 h-3.5" /> Not this one</>
+            }
+          </button>
+        </div>
+      )}
+
 
       {/* Expandable body */}
       {expanded && (

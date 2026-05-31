@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw, Info, Plus, Loader2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Info, Plus, Loader2, ChevronDown } from 'lucide-react';
 import type { Book, SelectedDimension, Recommendation, RecommendationRequest } from '@/types';
+import { DIMENSION_LABELS, DIMENSION_DESCRIPTIONS } from '@/types';
 import RecommendationCard from '@/components/RecommendationCard';
 import RecommendationSkeleton from '@/components/RecommendationSkeleton';
 import SelectedBookCard from '@/components/SelectedBookCard';
@@ -32,6 +33,8 @@ export default function RecommendationsPage() {
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreSkeletons, setMoreSkeletons] = useState(false);
+  const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+  const [dimsExpanded, setDimsExpanded] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -113,6 +116,44 @@ export default function RecommendationsPage() {
     }
   };
 
+  const handleReplace = async (index: number) => {
+    if (!book || !prefs || replacingIndex !== null) return;
+    setReplacingIndex(index);
+
+    const excludeTitles = recommendations.map((r) => r.title);
+
+    const request = {
+      sourceBook: book,
+      selectedDimensions: prefs.selectedDimensions,
+      optionalRefinement: prefs.optionalRefinement || undefined,
+      targetLanguage: 'English',
+      numberOfRecommendations: 1,
+      recommendationMode: 'balanced',
+      excludeTitles,
+    };
+
+    try {
+      const res = await fetch('/api/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      if (data.recommendations.length > 0) {
+        setRecommendations((prev) => {
+          const next = [...prev];
+          next[index] = data.recommendations[0];
+          return next;
+        });
+      }
+    } catch {
+      // silently fail — card stays as-is
+    } finally {
+      setReplacingIndex(null);
+    }
+  };
+
   const handleStartOver = () => {
     localStorage.removeItem(BOOK_KEY);
     localStorage.removeItem(PREFS_KEY);
@@ -172,6 +213,52 @@ export default function RecommendationsPage() {
         <h1 className="text-2xl font-bold text-stone-900 tracking-tight">Your recommendations</h1>
         <p className="text-sm text-stone-500 mt-1">Based on the reading experience you selected.</p>
 
+        {/* Collapsible dimension summary */}
+        {prefs && prefs.selectedDimensions.length > 0 && (
+          <div className="mt-4 rounded-xl border border-stone-200 overflow-hidden">
+            <button
+              onClick={() => setDimsExpanded((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-stone-50 text-left hover:bg-stone-100 transition-colors"
+            >
+              <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                What the AI was told ({prefs.selectedDimensions.length} dimension{prefs.selectedDimensions.length !== 1 ? 's' : ''})
+              </span>
+              <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform duration-200 ${dimsExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {dimsExpanded && (
+              <div className="px-4 py-3 space-y-2 bg-white">
+                {prefs.selectedDimensions
+                  .slice()
+                  .sort((a, b) => {
+                    const order = { high: 0, medium: 1, low: 2 };
+                    return order[a.importance] - order[b.importance];
+                  })
+                  .map((d) => (
+                    <div key={d.dimension} className="flex items-start gap-3">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded mt-0.5 flex-shrink-0 ${
+                        d.importance === 'high' ? 'bg-amber-100 text-amber-700' :
+                        d.importance === 'medium' ? 'bg-stone-100 text-stone-600' :
+                        'bg-stone-50 text-stone-400'
+                      }`}>
+                        {d.importance.toUpperCase()}
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold text-stone-700">{DIMENSION_LABELS[d.dimension]}</p>
+                        <p className="text-xs text-stone-400 leading-snug">{DIMENSION_DESCRIPTIONS[d.dimension]}</p>
+                      </div>
+                    </div>
+                  ))}
+                {prefs.optionalRefinement && (
+                  <div className="pt-2 border-t border-stone-100">
+                    <p className="text-xs font-semibold text-stone-500 mb-0.5">Your note</p>
+                    <p className="text-xs text-stone-500 italic">"{prefs.optionalRefinement}"</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {meta && meta.removedCount > 0 && (
           <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-stone-50 border border-stone-200">
             <Info className="w-3.5 h-3.5 text-stone-400 flex-shrink-0 mt-0.5" />
@@ -187,7 +274,13 @@ export default function RecommendationsPage() {
       {/* Cards */}
       <div className="space-y-4">
         {recommendations.map((rec, i) => (
-          <RecommendationCard key={`${rec.title}-${i}`} rec={rec} rank={i + 1} />
+          <RecommendationCard
+            key={`${rec.title}-${i}`}
+            rec={rec}
+            rank={i + 1}
+            onReplace={() => handleReplace(i)}
+            replacing={replacingIndex === i}
+          />
         ))}
 
         {/* Skeletons while loading more */}
