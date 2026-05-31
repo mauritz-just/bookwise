@@ -52,7 +52,7 @@ export interface RawAIRecommendation {
   author: string;
   matchScore: number;
   oneSentenceHook: string;
-  premise: string;
+  premise?: string;
   whyItFits: string;
   matchingDimensions: SimilarityDimension[];
   possibleMismatch: string;
