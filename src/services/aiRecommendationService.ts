@@ -95,6 +95,26 @@ async function claudeMode(request: RecommendationRequest): Promise<AIRecommendat
   return parseAndValidate(parsed);
 }
 
+function buildSeed(request: RecommendationRequest): number {
+  const key = [
+    request.sourceBook.title.toLowerCase().trim(),
+    request.sourceBook.author.toLowerCase().trim(),
+    request.selectedDimensions
+      .slice()
+      .sort((a, b) => a.dimension.localeCompare(b.dimension))
+      .map((d) => `${d.dimension}:${d.importance}`)
+      .join(','),
+    request.optionalRefinement?.toLowerCase().trim() ?? '',
+  ].join('|');
+
+  // Simple deterministic hash → integer
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (Math.imul(31, hash) + key.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
 async function groqMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY is not set');
@@ -116,8 +136,9 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
         },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.7,
+      temperature: 0.2,
       max_tokens: 3000,
+      seed: buildSeed(request),
       response_format: { type: 'json_object' },
     }),
   });
