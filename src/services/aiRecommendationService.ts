@@ -191,7 +191,7 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
 export async function getAIRecommendations(
   request: RecommendationRequest,
 ): Promise<AIRecommendationResponse> {
-  const mode = process.env.AI_MODE ?? 'gemini';
+  const mode = process.env.AI_MODE ?? 'groq';
 
   switch (mode) {
     case 'gemini':
