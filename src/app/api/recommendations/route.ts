@@ -66,6 +66,9 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Recommendation error:', message);
+    if (message === 'RATE_LIMIT') {
+      return NextResponse.json({ error: 'RATE_LIMIT' }, { status: 429 });
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

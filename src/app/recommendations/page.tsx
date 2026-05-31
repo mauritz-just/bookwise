@@ -30,7 +30,7 @@ export default function RecommendationsPage() {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'done' | 'error' | 'rate_limit'>('loading');
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreSkeletons, setMoreSkeletons] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
@@ -71,6 +71,7 @@ export default function RecommendationsPage() {
       body: JSON.stringify(request),
     })
       .then(async (res) => {
+        if (res.status === 429) throw new Error('RATE_LIMIT');
         if (!res.ok) throw new Error('Request failed');
         return res.json();
       })
@@ -79,7 +80,13 @@ export default function RecommendationsPage() {
         setMeta(data.meta);
         setStatus('done');
       })
-      .catch(() => setStatus('error'));
+      .catch((err) => {
+        if (err instanceof Error && err.message === 'RATE_LIMIT') {
+          setStatus('rate_limit');
+        } else {
+          setStatus('error');
+        }
+      });
   }, [router]);
 
   const handleLoadMore = async () => {
@@ -179,6 +186,25 @@ export default function RecommendationsPage() {
     );
   }
 
+  if (status === 'rate_limit') {
+    return (
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-20">
+        <ErrorState
+          title="Daily limit reached"
+          description="The free AI quota for today has been used up. Please try again tomorrow — limits reset at midnight UTC."
+        />
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={handleStartOver}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-200 text-stone-700 text-sm font-medium hover:bg-stone-50 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Try a different book
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'error') {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-20">
@@ -186,12 +212,18 @@ export default function RecommendationsPage() {
           title="Something went wrong"
           description="We couldn't generate recommendations. Please try again."
         />
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex justify-center gap-3">
           <button
             onClick={() => { hasFetched.current = false; setStatus('loading'); setRecommendations([]); }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Try again
+          </button>
+          <button
+            onClick={handleStartOver}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-200 text-stone-700 text-sm font-medium hover:bg-stone-50 transition-colors"
+          >
+            Try a different book
           </button>
         </div>
       </div>

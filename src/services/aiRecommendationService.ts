@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { RecommendationRequest, AIRecommendationResponse } from '@/types';
 import { buildRecommendationPrompt } from './recommendationPrompt';
-import { MOCK_RECOMMENDATIONS } from './mockRecommendations';
 
 const RawRecommendationSchema = z.object({
   title: z.string(),
@@ -35,10 +34,40 @@ function parseAndValidate(raw: unknown): AIRecommendationResponse {
   return result.data;
 }
 
-async function mockMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
-  await new Promise((r) => setTimeout(r, 1800));
-  const shuffled = [...MOCK_RECOMMENDATIONS].sort(() => Math.random() - 0.5);
-  return { recommendations: shuffled.slice(0, request.numberOfRecommendations) };
+async function geminiMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+
+  const prompt = buildRecommendationPrompt(request);
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+        },
+      }),
+    },
+  );
+
+  if (res.status === 429) {
+    throw new Error('RATE_LIMIT');
+  }
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini request failed (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const parsed = JSON.parse(text);
+  return parseAndValidate(parsed);
 }
 
 async function openAIMode(request: RecommendationRequest): Promise<AIRecommendationResponse> {
@@ -109,7 +138,6 @@ function buildSeed(request: RecommendationRequest): number {
     request.optionalRefinement?.toLowerCase().trim() ?? '',
   ].join('|');
 
-  // Simple deterministic hash → integer
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = (Math.imul(31, hash) + key.charCodeAt(i)) | 0;
@@ -145,6 +173,8 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
     }),
   });
 
+  if (res.status === 429) throw new Error('RATE_LIMIT');
+
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Groq request failed (${res.status}): ${err}`);
@@ -161,9 +191,11 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
 export async function getAIRecommendations(
   request: RecommendationRequest,
 ): Promise<AIRecommendationResponse> {
-  const mode = process.env.AI_MODE ?? 'mock';
+  const mode = process.env.AI_MODE ?? 'gemini';
 
   switch (mode) {
+    case 'gemini':
+      return geminiMode(request);
     case 'openai':
       return openAIMode(request);
     case 'claude':
@@ -171,6 +203,6 @@ export async function getAIRecommendations(
     case 'groq':
       return groqMode(request);
     default:
-      return mockMode(request);
+      throw new Error(`Unknown AI_MODE: ${mode}`);
   }
 }
