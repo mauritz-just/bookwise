@@ -19,6 +19,66 @@ function deduplicateCandidates(candidates: RawAIRecommendation[]): RawAIRecommen
   return Array.from(seen.values());
 }
 
+const SPECULATIVE_KEYWORDS = [
+  'fantasy', 'portal', 'mytholog', 'myth ', 'mythic', 'time travel', 'time-travel',
+  'sci-fi', 'science fiction', 'speculative', 'magical realism', 'supernatural',
+  'sorcery', 'wizard', 'dragon', 'magic ', 'dystopian',
+];
+
+const PLOT_KEYWORDS = [
+  'plot', 'twist', 'mystery', 'adventure', 'premise', 'page-turner', 'thriller',
+  'suspense', 'whodunit', 'fast-paced', 'action',
+];
+
+const REGISTER_MISMATCH_KEYWORDS = [
+  'fantastical', 'fantasy', 'heroic', 'comic', 'comedic', 'satirical', 'satire',
+  'high-concept', 'plot-driven', 'epic', 'whimsical', 'adventurous', 'mythic',
+];
+
+// Deterministic, approximate score caps applied after AI generation (Task 10).
+// Heuristics scan the AI's own text fields; the prompt does the heavy lifting.
+function applyScoreCaps(
+  candidates: RawAIRecommendation[],
+  selectedDimensions: SelectedDimension[],
+): RawAIRecommendation[] {
+  const hasHigh = selectedDimensions.some((d) => d.importance === 'high');
+  const settingHigh = selectedDimensions.some((d) => d.dimension === 'setting' && d.importance === 'high');
+  const toneFeelHigh = selectedDimensions.some(
+    (d) => (d.dimension === 'tone' || d.dimension === 'emotionalFeel') && d.importance === 'high',
+  );
+  const plotLow = selectedDimensions.some((d) => d.dimension === 'plot' && d.importance === 'low');
+  const genreSelected = selectedDimensions.some((d) => d.dimension === 'genre');
+
+  return candidates.map((c) => {
+    let cap = 100;
+    const mismatch = c.possibleMismatch?.toLowerCase() ?? '';
+    const why = c.whyItFits?.toLowerCase() ?? '';
+    const hook = c.oneSentenceHook?.toLowerCase() ?? '';
+    const tags = c.tags.map((t) => t.toLowerCase()).join(' ');
+    const blob = `${mismatch} ${tags}`;
+
+    // Rule 1: no HIGH dimension selected at all → cap 88
+    if (!hasHigh) cap = Math.min(cap, 88);
+
+    // Rule 5: Tone/EmotionalFeel HIGH + mismatch signals a different register → cap 79
+    if (toneFeelHigh && REGISTER_MISMATCH_KEYWORDS.some((k) => mismatch.includes(k))) {
+      cap = Math.min(cap, 79);
+    }
+
+    // Rule 6: Setting HIGH + speculative signals + Genre not selected → cap 79
+    if (settingHigh && !genreSelected && SPECULATIVE_KEYWORDS.some((k) => blob.includes(k))) {
+      cap = Math.min(cap, 79);
+    }
+
+    // Rule 4: Plot LOW + explanation leans on plot/mystery/twists → cap 79
+    if (plotLow && PLOT_KEYWORDS.some((k) => why.includes(k) || hook.includes(k))) {
+      cap = Math.min(cap, 79);
+    }
+
+    return cap < c.matchScore ? { ...c, matchScore: cap } : c;
+  });
+}
+
 export async function validateRecommendations(
   candidates: RawAIRecommendation[],
   selectedDimensions: SelectedDimension[],
@@ -36,23 +96,26 @@ export async function validateRecommendations(
     (c) => normalizeKey(c.title, '').replace('|', '') !== sourceKey.replace('|', ''),
   );
 
-  // 2. Remove score < 70
+  // 2. Apply deterministic score caps based on selected dimensions + AI text signals
+  filtered = applyScoreCaps(filtered, selectedDimensions);
+
+  // 3. Remove score < 70
   const beforeQuality = filtered.length;
   filtered = filtered.filter((c) => c.matchScore >= 70);
 
-  // 3. If there are high-importance dimensions, require at least one in matchingDimensions
+  // 4. If there are high-importance dimensions, require at least one in matchingDimensions
   if (highDimensions.length > 0) {
     filtered = filtered.filter((c) =>
       highDimensions.some((d) => c.matchingDimensions.includes(d)),
     );
   }
 
-  // 4. Deduplicate before validation
+  // 5. Deduplicate before validation
   filtered = deduplicateCandidates(filtered);
 
   const qualityRemovedCount = beforeQuality - filtered.length;
 
-  // 5. Open Library validation (parallel)
+  // 6. Open Library validation (parallel)
   const results = await Promise.allSettled(
     filtered.map(async (rec): Promise<Recommendation> => {
       const bookData = await validateBook(rec.title, rec.author);
