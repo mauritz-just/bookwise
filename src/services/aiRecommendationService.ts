@@ -108,7 +108,7 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       messages: [
         {
           role: 'system',
@@ -117,7 +117,7 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
         { role: 'user', content: prompt },
       ],
       temperature: 0.7,
-      max_tokens: 4096,
+      max_tokens: 3000,
       response_format: { type: 'json_object' },
     }),
   });
