@@ -10,10 +10,12 @@ const RawRecommendationSchema = z.object({
   oneSentenceHook: z.string(),
   premise: z.string().optional(),
   whyItFits: z.string(),
-  matchingDimensions: z.array(z.enum([
-    'plot', 'tone', 'characters', 'writingStyle', 'themes',
-    'setting', 'pacing', 'emotionalFeel', 'complexity', 'genre',
-  ])),
+  matchingDimensions: z.array(
+    z.enum([
+      'plot', 'tone', 'characters', 'writingStyle', 'themes',
+      'setting', 'pacing', 'emotionalFeel', 'complexity', 'genre',
+    ]).catch('setting' as const)
+  ),
   possibleMismatch: z.string(),
   tags: z.array(z.string()),
   difficulty: z.enum(['easy', 'medium', 'hard']),
