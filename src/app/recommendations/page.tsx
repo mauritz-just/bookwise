@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import type { Book, SelectedDimension, Recommendation, RecommendationRequest } from '@/types';
 import RecommendationCard from '@/components/RecommendationCard';
+import RecommendationSkeleton from '@/components/RecommendationSkeleton';
 import SelectedBookCard from '@/components/SelectedBookCard';
-import LoadingState from '@/components/LoadingState';
 import ErrorState from '@/components/ErrorState';
 
 const BOOK_KEY = 'bookwise_selected_book';
@@ -111,8 +111,17 @@ export default function RecommendationsPage() {
 
   if (status === 'loading') {
     return (
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-20">
-        <LoadingState message="Finding your recommendations…" />
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12">
+        <div className="mb-8">
+          <div className="h-7 w-48 bg-stone-200 rounded animate-pulse mb-2" />
+          <div className="h-4 w-64 bg-stone-100 rounded animate-pulse" />
+        </div>
+        <div className="space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <RecommendationSkeleton key={i} />
+          ))}
+        </div>
+        <p className="text-center text-xs text-stone-400 mt-6">Finding your recommendations…</p>
       </div>
     );
   }
