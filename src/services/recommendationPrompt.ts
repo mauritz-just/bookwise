@@ -89,6 +89,32 @@ ${dimensionBlock}
 ${optionalRefinement ? `## Reader's own words\n"${optionalRefinement}"\n` : ''}${exclusionNote}## Recommendation mode
 ${modeInstructions[recommendationMode] ?? modeInstructions.balanced}
 
+## STEP 1 — Classify the source book first (internal, do not output)
+Before generating any recommendation, classify "${sourceBook.title}" along these four axes:
+
+1. sourceGenreMode — e.g. literary realism, dark academia, campus novel, gothic mystery, psychological literary suspense, historical literary fiction, myth retelling, fantasy, high-concept science fiction, domestic realism, satire, postmodern fiction.
+2. sourceSettingType — e.g. elite academic institution, closed intellectual student circle, decaying aristocratic society, urban loneliness, postwar domestic world, immigrant social world, artistic/bohemian milieu, mythological ancient world, dystopian institution.
+3. sourceEmotionalRegister — e.g. melancholic, tense, morally uneasy, restrained, obsessive, satirical, comic, romantic, heroic, paranoid, surreal, nostalgic.
+4. sourceSocialDynamics — e.g. class performance, secrecy, group pressure, intellectual elitism, privilege, moral corruption, family duty, romantic longing, institutional oppression, artistic ambition.
+
+These four classifications define the SPECIFIC reading experience. A book is only a strong match if it shares the specific source classifications — not merely the same broad category (e.g. "realistic literary fiction" or "about class").
+
+## STEP 2 — The 90+ gate (strict)
+A recommendation may score 90 or above ONLY IF it strongly matches BOTH:
+  (a) the highest-importance selected dimension, AND
+  (b) at least TWO of the four source classifications above (sourceGenreMode, sourceSettingType, sourceEmotionalRegister, sourceSocialDynamics).
+
+If a book matches the highest dimension but only ONE (or zero) source classifications, it must score below 90 — usually 70–85.
+
+Do NOT give 90+ merely because a book is:
+- realistic literary fiction
+- about class
+- about identity
+- about relationships
+- set in a wealthy or institutional environment
+- character-driven
+- by the same author
+
 ## Strict reasoning rules
 
 Before including any book, answer these questions internally:
@@ -127,13 +153,19 @@ Good: "This fits the quiet, emotionally restrained melancholy you prioritized �
 ## Score calibration — use this scale strictly. 90+ MUST BE RARE.
 In a list of ${numberOfRecommendations} candidates, usually only 0–2 books should score 90+. If more than 3 exceed 90, recalibrate downward.
 
-95–100: Near-perfect. Rare. Strongly matches the highest-weighted dimension + at least two supporting dimensions, with no major mismatch in genre mode, emotional register, pacing, complexity, or setting type.
-90–94: Excellent. Strong match on the highest-weighted dimension + at least one secondary dimension. No major genre-mode mismatch.
-80–89: Good but imperfect. Defensible, with at least one meaningful mismatch.
-70–79: Partial. Interesting but clearly imperfect.
+95–100: Near-perfect. Rare. Matches the highest-weighted dimension AND at least three of the four source classifications. No major mismatch.
+90–94: Excellent. Matches the highest-weighted dimension AND at least two of the four source classifications (see the 90+ gate above). No major genre-mode mismatch.
+80–89: Good but imperfect. Matches the highest dimension but only one source classification, or has a meaningful mismatch.
+70–79: Partial. Shares the broad category or a single source classification (e.g. closed group dynamics) but lacks the specific genre mode, setting type, or emotional register.
 Below 70: DO NOT include.
 
-Never give 90+ to a book whose main similarity is broad themes, literary prestige, author fame, or generic atmosphere.
+Never give 90+ to a book whose main similarity is broad themes, literary prestige, author fame, generic atmosphere, or merely "realistic literary fiction about class/identity/relationships".
+
+Example recalibration (for The Secret History with Setting / Social World High):
+- The Remains of the Day: partial social-world match, but lacks dark academia, youth clique dynamics, secrecy, and intellectual group pressure → below 85.
+- The Goldfinch: strong Tartt-style match, but NOT dark academia. Cap below 90 unless the explanation focuses on dense social worlds, art obsession, moral drift, and psychological consequences. Never label it "dark academia".
+- The Interestings, The Group, The Rules of Attraction: valid partial matches at 75–82 (closed group dynamics, but not dark academic tone).
+- If We Were Villains, Bunny, Brideshead Revisited, The Name of the Rose, Possession, The Likeness, The Truants, Black Chalk, The Secret Place: favoured — closed intellectual/elite social worlds with secrecy and moral pressure.
 
 ## Your task
 Recommend exactly ${numberOfRecommendations} real, published books. All must score 70 or above.
@@ -142,7 +174,7 @@ Rules:
 1. Every book must be a real, verifiable published work. Do not invent titles.
 2. Do not recommend the source book itself.
 3. Each high-importance dimension must appear in matchingDimensions for each recommendation.
-4. "whyItFits" must: (a) name the selected high-importance dimension, (b) explain how this book matches that dimension, (c) give one specific similarity to the source book, (d) make clear the match is more than broad theme or genre. No generic blurbs.
+4. "whyItFits" must: (a) name the selected high-importance dimension, (b) explain how this book matches that dimension, (c) give one specific similarity to the source book, (d) make clear the match is more than broad theme or genre. No generic blurbs. When Setting / Social World is involved, name the SPECIFIC social world type (e.g. "a closed intellectual environment where class, education, secrecy, and group pressure shape moral choices") — never generic phrasing like "realistic literary fiction focused on social institutions". Do not falsely label a book "dark academia" if it is not.
 5. "possibleMismatch" must name a specific, real difference (e.g. "More fantasy-driven than The Secret History, so its world feels like magical escapism rather than dark academia"). Never a vague hedge like "the pacing may be slow" or "the style may differ".
 6. No duplicates.
 7. Return ONLY valid JSON — no prose, no markdown fences.
