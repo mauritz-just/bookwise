@@ -57,11 +57,18 @@ ${optionalRefinement ? `## Reader's own words\n"${optionalRefinement}"\n` : ''}$
 3. No duplicates.
 4. Prioritize candidates that match the HIGH-importance dimensions.
 5. Use the source book analysis above as the main interpretation of the source book. Match its genre mode, setting type, emotional register, and social dynamics — not just broad themes.
-6. Include both obvious strong candidates AND some less obvious but defensible ones.
+6. Lead with the most obvious, canonical, well-known matches first — the books most readers would name as similar — then add some less obvious but defensible picks.
 7. Do NOT score candidates.
 8. Do NOT over-select books from the same author (at most 1–2 by any single author).
 9. Avoid broad-theme-only candidates unless you mark them with riskFlags.
 10. Include riskFlags honestly — note anything that might later cause this book to be downranked.
+
+## Title & author formatting (so candidates can be verified)
+Each candidate will be checked against the Open Library catalog, so make titles easy to find:
+- Use the EXACT common published title and the common form of the author's name (e.g. "Andy Weir", "Martha Wells", "Blake Crouch", "John Scalzi").
+- Do NOT include subtitles, taglines, or edition names. Put only the core title in "title" (e.g. "The Martian", not "The Martian: A Novel").
+- For a series, use the exact title of the relevant single book — usually the first book — not the series name (e.g. "All Systems Red" for the Murderbot Diaries; "We Are Legion (We Are Bob)" using the standard catalog form; "The Long Way to a Small, Angry Planet" for the Wayfarers series).
+- Avoid obscure, ambiguous, or out-of-print-only titles when a canonical, widely catalogued equivalent exists.
 
 Useful riskFlag examples: "more plot-driven", "more traumatic", "genre-mode mismatch", "less emotionally restrained", "more fantasy-driven", "too complex", "broad-theme match only", "different setting type", "more comic", "more heroic".
 

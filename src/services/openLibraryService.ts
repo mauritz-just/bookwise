@@ -67,34 +67,108 @@ export async function searchBooks(query: string, limit = 20): Promise<Book[]> {
   return deduplicateBooks(books).slice(0, 10);
 }
 
-export async function validateBook(title: string, author: string): Promise<Book | null> {
-  const query = `${title} ${author}`;
-  const url =
-    `${BASE}/search.json?q=${encodeURIComponent(query)}&limit=8` +
-    `&fields=key,title,author_name,first_publish_year,cover_i,isbn`;
+// --- Robust validation helpers ---
 
-  const res = await fetch(url, { next: { revalidate: 300 } });
-  if (!res.ok) return null;
+// Remove subtitles (after : / – — -) and parentheticals like "(We Are Bob)".
+function stripSubtitle(title: string): string {
+  return title
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s*[/:–—-]\s.+$/, '')
+    .trim();
+}
 
-  const data = await res.json();
-  const docs: any[] = data.docs ?? []; // eslint-disable-line @typescript-eslint/no-explicit-any
+// Lowercase, drop apostrophes, & → and, everything else → spaces.
+function canonical(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[’'`]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
 
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+function compact(s: string): string {
+  return canonical(s).replace(/\s+/g, '');
+}
 
-  const match = docs.find((doc) => {
-    const docTitle = normalize(doc.title ?? '');
-    const queryTitle = normalize(title);
-    const titleOk =
-      docTitle.includes(queryTitle) || queryTitle.includes(docTitle);
+function lastNameToken(author: string): string {
+  const parts = canonical(author).split(' ').filter(Boolean);
+  return parts[parts.length - 1] ?? '';
+}
 
-    const authorOk = (doc.author_name ?? []).some((a: string) => {
-      const da = normalize(a);
-      const qa = normalize(author);
-      return da.includes(qa) || qa.includes(da);
-    });
+function titleMatches(docTitle: string, queryTitle: string): boolean {
+  const d = compact(docTitle);
+  const q = compact(queryTitle);
+  if (!d || !q) return false;
+  if (d === q || d.includes(q) || q.includes(d)) return true;
+  // Retry with subtitles/parentheticals stripped from both sides.
+  const ds = compact(stripSubtitle(docTitle));
+  const qs = compact(stripSubtitle(queryTitle));
+  if (!ds || !qs) return false;
+  return ds === qs || ds.includes(qs) || qs.includes(ds);
+}
 
-    return titleOk && authorOk;
+function authorClose(docAuthors: string[], queryAuthor: string): boolean {
+  const qc = compact(queryAuthor);
+  const ql = lastNameToken(queryAuthor);
+  return docAuthors.some((a) => {
+    const ac = compact(a);
+    if (ac && qc && (ac.includes(qc) || qc.includes(ac))) return true;
+    const al = lastNameToken(a);
+    return !!al && !!ql && al === ql;
   });
+}
 
-  return match ? docToBook(match) : null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchDocs(query: string, limit = 10): Promise<any[]> {
+  const url =
+    `${BASE}/search.json?q=${encodeURIComponent(query)}&limit=${limit}` +
+    `&fields=key,title,author_name,first_publish_year,cover_i,isbn`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.docs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Verify a book exists in Open Library, trying several search strategies and
+ * tolerant matching (apostrophes, subtitles, parentheticals, author last
+ * name). Accepts a strong title match when the author is close even if the
+ * full author string doesn't match exactly. Returns the best edition found.
+ */
+export async function validateBook(title: string, author: string): Promise<Book | null> {
+  const stripped = stripSubtitle(title);
+  const ln = lastNameToken(author);
+
+  const strategies = [
+    `${title} ${author}`,        // title + author
+    `${stripped} ${author}`,     // de-subtitled title + author
+    `${stripped} ${ln}`,         // de-subtitled title + author last name
+    title,                       // title only
+    stripped,                    // de-subtitled title only
+  ];
+
+  const seenQuery = new Set<string>();
+  for (const query of strategies) {
+    const key = query.trim().toLowerCase();
+    if (!key || seenQuery.has(key)) continue;
+    seenQuery.add(key);
+
+    const docs = await fetchDocs(query);
+    const matches: Book[] = docs
+      .filter((doc) => titleMatches(doc.title ?? '', title) && authorClose(doc.author_name ?? [], author))
+      .map(docToBook);
+
+    if (matches.length > 0) {
+      let best = matches[0];
+      for (const m of matches) if (isBetterEdition(m, best)) best = m;
+      return best;
+    }
+  }
+
+  return null;
 }

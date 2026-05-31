@@ -67,7 +67,9 @@ Apply these score caps strictly:
 - If the appeal is "intellectual curiosity" rather than problem-solving / mission / survival / fast plot: cap at 79.
 - If the book is political / systems sci-fi rather than science-problem-solving adventure: cap at 75.
 
-Such books may remain in the list as partial matches but must NOT rank near the top.\n`
+Such books may remain in the list as partial matches but must NOT rank near the top.
+
+Specifically: dense, cerebral hard science fiction and slow philosophical science fiction (e.g. Greg Egan, or idea-driven novels with little forward momentum) should be penalized for this profile unless Complexity is Medium or High. They must not outrank accessible, fast, problem-solving/mission/survival adventures. If a strong, obvious accessible match is present, it should land in the top 2.\n`
     : '';
 
   const modeInstructions: Record<string, string> = {

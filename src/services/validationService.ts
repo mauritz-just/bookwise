@@ -31,6 +31,21 @@ export async function validateRecommendationCandidates(
     )
     .map((r) => r.value as ValidatedRecommendationCandidate);
 
+  // Log what was generated but could not be verified, so the candidate
+  // prompt can be tuned toward more canonical, verifiable titles.
+  if (process.env.NODE_ENV !== 'production') {
+    const failed = candidates.filter((c, i) => {
+      const res = results[i];
+      return res.status !== 'fulfilled' || res.value === null;
+    });
+    if (failed.length > 0) {
+      console.log(
+        `[pipeline] ${failed.length}/${candidates.length} candidates failed Open Library verification:`,
+        failed.map((c) => `${c.title} — ${c.author}`),
+      );
+    }
+  }
+
   const deduped = new Map<string, ValidatedRecommendationCandidate>();
   for (const v of validated) {
     const key = normalizeKey(v.bookData.title, v.bookData.author);

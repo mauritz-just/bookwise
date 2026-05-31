@@ -64,6 +64,14 @@ const POLITICAL_KEYWORDS = [
   'ideolog', 'revolution', 'power struggle',
 ];
 
+// Dense / cerebral hard-SF and slow philosophical SF — only appropriate when
+// the reader wants Medium/High complexity.
+const DENSE_SF_KEYWORDS = [
+  'greg egan', 'hard science fiction', 'hard sci-fi', 'hard sf',
+  'rigorous', 'technical detail', 'physics-heavy', 'mathematical',
+  'philosophical science fiction', 'cerebral hard', 'dense conceptual',
+];
+
 /**
  * Deterministic score caps for fast, accessible, problem-solving requests
  * (Plot High + Pacing High + Complexity Low). The reranking prompt does the
@@ -77,6 +85,9 @@ function applyRerankCaps(
   selected: RecommendationRequest['selectedDimensions'],
 ): number {
   const complexityLow = selected.some((d) => d.dimension === 'complexity' && d.importance === 'low');
+  const complexityMidHigh = selected.some(
+    (d) => d.dimension === 'complexity' && (d.importance === 'medium' || d.importance === 'high'),
+  );
   const pacingHigh = selected.some((d) => d.dimension === 'pacing' && d.importance === 'high');
 
   // Only engage this heuristic family for accessible / fast-pacing requests.
@@ -84,7 +95,8 @@ function applyRerankCaps(
 
   const blob = [
     r.whyItFits, r.oneSentenceHook, r.possibleMismatch,
-    candidate.candidateReason, ...candidate.riskFlags, ...r.tags,
+    candidate.candidateReason, candidate.author, candidate.bookData.author, candidate.bookData.title,
+    ...candidate.riskFlags, ...r.tags,
   ].join(' ').toLowerCase();
 
   const has = (list: string[]) => list.some((k) => blob.includes(k));
@@ -92,6 +104,7 @@ function applyRerankCaps(
   const problemSolving = has(PROBLEM_SOLVING_KEYWORDS);
   const intellectual = has(INTELLECTUAL_KEYWORDS);
   const political = has(POLITICAL_KEYWORDS);
+  const denseSF = has(DENSE_SF_KEYWORDS);
   const extremelyAligned =
     r.matchingDimensions.includes('plot') &&
     r.matchingDimensions.includes('pacing') &&
@@ -101,6 +114,9 @@ function applyRerankCaps(
 
   // Complexity Low + challenging book → cap 82 unless extremely aligned on plot+pacing.
   if (complexityLow && challenging && !extremelyAligned) cap = Math.min(cap, 82);
+
+  // Dense / philosophical hard-SF is only appropriate when Complexity is Medium/High.
+  if (denseSF && !complexityMidHigh && !extremelyAligned) cap = Math.min(cap, 82);
 
   // Pacing High + steady/slow book → cap 84.
   if (pacingHigh && (r.pacing === 'slow' || r.pacing === 'moderate')) cap = Math.min(cap, 84);
