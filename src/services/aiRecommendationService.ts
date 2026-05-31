@@ -158,7 +158,7 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
@@ -166,8 +166,8 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
         },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.2,
-      max_tokens: 3000,
+      temperature: 0.35,
+      max_tokens: 4000,
       seed: buildSeed(request),
       response_format: { type: 'json_object' },
     }),
@@ -190,19 +190,27 @@ async function groqMode(request: RecommendationRequest): Promise<AIRecommendatio
 
 export async function getAIRecommendations(
   request: RecommendationRequest,
-): Promise<AIRecommendationResponse> {
+): Promise<{ response: AIRecommendationResponse; source: string }> {
   const mode = process.env.AI_MODE ?? 'groq';
+  console.log('Recommendation source:', mode);
 
+  let response: AIRecommendationResponse;
   switch (mode) {
     case 'gemini':
-      return geminiMode(request);
+      response = await geminiMode(request);
+      break;
     case 'openai':
-      return openAIMode(request);
+      response = await openAIMode(request);
+      break;
     case 'claude':
-      return claudeMode(request);
+      response = await claudeMode(request);
+      break;
     case 'groq':
-      return groqMode(request);
+      response = await groqMode(request);
+      break;
     default:
       throw new Error(`Unknown AI_MODE: ${mode}`);
   }
+
+  return { response, source: mode };
 }

@@ -22,6 +22,7 @@ interface Meta {
   totalCandidates: number;
   validatedCount: number;
   removedCount: number;
+  qualityRemovedCount: number;
 }
 
 export default function RecommendationsPage() {
@@ -30,6 +31,7 @@ export default function RecommendationsPage() {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const [aiSource, setAiSource] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'done' | 'error' | 'rate_limit'>('loading');
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreSkeletons, setMoreSkeletons] = useState(false);
@@ -78,6 +80,7 @@ export default function RecommendationsPage() {
       .then((data) => {
         setRecommendations(data.recommendations);
         setMeta(data.meta);
+        setAiSource(data.source ?? null);
         setStatus('done');
       })
       .catch((err) => {
@@ -296,9 +299,18 @@ export default function RecommendationsPage() {
             <Info className="w-3.5 h-3.5 text-stone-400 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-stone-500">
               {meta.removedCount} candidate{meta.removedCount > 1 ? 's were' : ' was'} removed
-              because {meta.removedCount > 1 ? 'they' : 'it'} could not be verified in Open Library.
-              Showing {meta.validatedCount} verified result{meta.validatedCount !== 1 ? 's' : ''}.
+              {meta.qualityRemovedCount > 0
+                ? ` — ${meta.qualityRemovedCount} did not pass quality checks and ${meta.removedCount - meta.qualityRemovedCount} could not be verified in Open Library`
+                : ' because they could not be verified in Open Library'
+              }. Showing {meta.validatedCount} verified result{meta.validatedCount !== 1 ? 's' : ''}.
             </p>
+          </div>
+        )}
+
+        {/* Debug: recommendation source — hidden in production */}
+        {process.env.NODE_ENV !== 'production' && aiSource && (
+          <div className="mt-2 text-[10px] text-stone-300 text-right">
+            source: {aiSource}
           </div>
         )}
       </div>
